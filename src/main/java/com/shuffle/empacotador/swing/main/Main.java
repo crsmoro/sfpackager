@@ -166,6 +166,7 @@ public class Main {
 
 				@Override
 				public void run() {
+					log.info("Removing tmpFolder " + packer.getTmpFolder());
 					deleteDirectory(packer.getTmpFolder());
 				}
 			}));
@@ -174,7 +175,7 @@ public class Main {
 			e.printStackTrace();
 		}
 	}
-	
+
 	private void deleteDirectory(String directory) {
 		deleteDirectory(new File(directory));
 	}
