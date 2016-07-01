@@ -6,7 +6,9 @@ import java.io.FileOutputStream;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 import org.apache.commons.io.FileUtils;
 import org.apache.commons.io.IOCase;
@@ -28,6 +30,8 @@ public class Packer {
 	private transient static final Log log = LogFactory.getLog(Packer.class);
 
 	private List<File> pendingFiles = new ArrayList<>();
+
+	private Map<File, File> patchFiles = new HashMap<>();
 
 	private String sourceFolder;
 
@@ -120,13 +124,36 @@ public class Packer {
 		return pendingFiles;
 	}
 
-	/**
-	 * Use to override the pending files to crate the patch
-	 * 
-	 * @param pendingFiles
-	 */
-	public void setPendingFiles(List<File> pendingFiles) {
-		this.pendingFiles = pendingFiles;
+	public Map<File, File> getPatchFiles() throws SVNException {
+		patchFiles.clear();
+		if (pendingFiles.isEmpty()) {
+			getPendingFiles();
+		}
+		for (File pendingFiles : pendingFiles) {
+			String sourceFullPath = getFullPathSource(pendingFiles);
+			String destinarionFullPath = getFullPathDestination(pendingFiles);
+			patchFiles.put(new File(sourceFullPath), new File(destinarionFullPath));
+			if (isPackCompiledClasses() && isClass(pendingFiles)) {
+				File pendingFileSource = new File(sourceFullPath);
+				String wildcard = pendingFileSource.getName().substring(0, pendingFileSource.getName().lastIndexOf(".")) + "$*"
+						+ pendingFileSource.getName().substring(pendingFileSource.getName().lastIndexOf("."), pendingFileSource.getName().length());
+				log.debug("wildcard : " + wildcard);
+
+				FileUtils.iterateFiles(pendingFileSource.getParentFile(), new WildcardFileFilter(wildcard, IOCase.INSENSITIVE), null).forEachRemaining(file -> {
+					String newSourceFullPath = getFullPathSource(file);
+					String newDestinationFullPath = getFullPathDestination(new File(pendingFiles.getParent() + File.separator + file.getName()));
+					log.debug("newSourceFullPath : " + newSourceFullPath);
+					log.debug("newDestinationFullPath : " + newDestinationFullPath);
+
+					File fileSource = new File(newSourceFullPath);
+					File fileDestination = new File(newDestinationFullPath);
+
+					patchFiles.put(fileSource, fileDestination);
+				});
+			}
+		}
+
+		return patchFiles;
 	}
 
 	private List<File> getAllFiles(File file) {
@@ -204,40 +231,25 @@ public class Packer {
 	}
 
 	public void createPatch() throws SVNException {
+
+	}
+
+	public void createPatch(Map<File, File> files) throws SVNException {
 		if (StringUtils.isBlank(getDestinationFolder()) || !new File(getDestinationFolder()).isDirectory() || new File(getDestinationFolder()).list().length > 0) {
 			throw new IllegalArgumentException("Destination folder not valid");
 		}
-		if (pendingFiles.isEmpty()) {
-			getPendingFiles();
-		}
-		for (File pendingFiles : pendingFiles) {
-			String source = getFullPathSource(pendingFiles);
-			String destination = getFullPathDestination(pendingFiles);
-			createFolder(destination.substring(0, destination.lastIndexOf(File.separator)), getDestinationFolder());
-
-			File fileSource = new File(source);
-			String wildcard = fileSource.getName().substring(0, fileSource.getName().lastIndexOf(".")) + "*" + fileSource.getName().substring(fileSource.getName().lastIndexOf("."), fileSource.getName().length());
-			String sourceFolder = source.substring(0, source.lastIndexOf(File.separator));
-			File fileSourceFolder = new File(sourceFolder);
-			log.debug("wildcard : " + wildcard);
-			log.debug("source folder : " + sourceFolder);
-			
-			FileUtils.iterateFiles(fileSourceFolder, new WildcardFileFilter(wildcard, IOCase.INSENSITIVE), null).forEachRemaining(file -> {
-				try {
-					String newSource = getFullPathSource(file);
-					String newDestination = getFullPathDestination(new File(pendingFiles.getParent() + File.separator + file.getName()));
-					log.debug("newSource : " + newSource);
-					log.debug("newDestination : " + newDestination);
-					FileInputStream fileInputStreamSource = new FileInputStream(newSource);
-					FileOutputStream fileOutputStreamDestination = new FileOutputStream(newDestination);
-					IOUtils.copy(fileInputStreamSource, fileOutputStreamDestination);
-					fileInputStreamSource.close();
-					fileOutputStreamDestination.close();
-				} catch (IOException e) {
-					e.printStackTrace();
-				}
-			});
-
+		for (File source : files.keySet()) {
+			File destination = files.get(source);
+			createFolder(destination.getParent(), getDestinationFolder());
+			try {
+				FileInputStream fileInputStreamSource = new FileInputStream(source);
+				FileOutputStream fileOutputStreamDestination = new FileOutputStream(destination);
+				IOUtils.copy(fileInputStreamSource, fileOutputStreamDestination);
+				fileInputStreamSource.close();
+				fileOutputStreamDestination.close();
+			} catch (IOException e) {
+				e.printStackTrace();
+			}
 		}
 		if (isCreateZip()) {
 			Zip zip = new Zip(getDestinationFolder());
@@ -248,7 +260,7 @@ public class Packer {
 
 	private void createFolder(String path, String baseFolder) {
 		String[] folders = path.replace(baseFolder + File.separator, "").split(File.separator + File.separator);
-		log.debug(Arrays.toString(folders));
+		log.trace(Arrays.toString(folders));
 		if (folders.length > 1) {
 			createFolder(StringUtils.join(folders, File.separator, 1, folders.length), baseFolder + File.separator + folders[0]);
 		} else {
