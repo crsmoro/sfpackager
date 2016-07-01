@@ -4,7 +4,7 @@
 	<groupId>com.shuffle.empacotador</groupId>
 	<artifactId>gerador-pacote</artifactId>
 	<packaging>jar</packaging>
-	<version>0.1.0</version>
+	<version>0.2.0</version>
 	<name>gerador-pacote</name>
 	<url>http://maven.apache.org</url>
 	<properties>

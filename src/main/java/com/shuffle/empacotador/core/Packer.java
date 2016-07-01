@@ -6,6 +6,7 @@ import java.io.FileOutputStream;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Date;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -37,6 +38,8 @@ public class Packer {
 
 	private String destinationFolder;
 
+	private String tmpFolder;
+
 	private boolean createZip = true;
 
 	private String zipName;
@@ -57,6 +60,38 @@ public class Packer {
 
 	private final String compiledDestinationFolderClasses = File.separator + "WEB-INF" + File.separator + "classes" + File.separator;
 
+	public Packer() {
+		updateTmpFolder();
+	}
+
+	private void updateTmpFolder() {
+		if (StringUtils.isNotBlank(this.tmpFolder) && new File(this.tmpFolder).exists()) {
+			log.info("Removing old temp folder " + this.tmpFolder);
+			deleteDirectoryContent(this.tmpFolder);
+		}
+		this.tmpFolder = System.getProperty("java.io.tmpdir") + new Date().getTime();
+		log.info("tmpFolder : " + this.tmpFolder);
+		File tmpFile = new File(this.tmpFolder);
+		tmpFile.mkdir();
+	}
+
+	private void deleteDirectoryContent(String directory) {
+		deleteDirectoryContent(new File(directory));
+	}
+
+	private void deleteDirectoryContent(File directory) {
+		for (File file : directory.listFiles()) {
+			if (file.isDirectory()) {
+				deleteDirectoryContent(file);
+			} else {
+				file.delete();
+			}
+		}
+		if (!new File(getTmpFolder()).getAbsolutePath().equals(directory.getAbsolutePath())) {
+			directory.delete();
+		}
+	}
+
 	public String getSourceFolder() {
 		return sourceFolder;
 	}
@@ -71,6 +106,10 @@ public class Packer {
 
 	public void setDestinationFolder(String destinationFolder) {
 		this.destinationFolder = destinationFolder;
+	}
+
+	public String getTmpFolder() {
+		return isCreateZip() ? tmpFolder : getDestinationFolder();
 	}
 
 	public boolean isCreateZip() {
@@ -126,10 +165,7 @@ public class Packer {
 
 	public Map<File, File> getPatchFiles() throws SVNException {
 		patchFiles.clear();
-		if (pendingFiles.isEmpty()) {
-			getPendingFiles();
-		}
-		for (File pendingFiles : pendingFiles) {
+		for (File pendingFiles : getPendingFiles()) {
 			String sourceFullPath = getFullPathSource(pendingFiles);
 			String destinarionFullPath = getFullPathDestination(pendingFiles);
 			patchFiles.put(new File(sourceFullPath), new File(destinarionFullPath));
@@ -137,13 +173,13 @@ public class Packer {
 				File pendingFileSource = new File(sourceFullPath);
 				String wildcard = pendingFileSource.getName().substring(0, pendingFileSource.getName().lastIndexOf(".")) + "$*"
 						+ pendingFileSource.getName().substring(pendingFileSource.getName().lastIndexOf("."), pendingFileSource.getName().length());
-				log.debug("wildcard : " + wildcard);
+				log.trace("wildcard : " + wildcard);
 
 				FileUtils.iterateFiles(pendingFileSource.getParentFile(), new WildcardFileFilter(wildcard, IOCase.INSENSITIVE), null).forEachRemaining(file -> {
 					String newSourceFullPath = getFullPathSource(file);
 					String newDestinationFullPath = getFullPathDestination(new File(pendingFiles.getParent() + File.separator + file.getName()));
-					log.debug("newSourceFullPath : " + newSourceFullPath);
-					log.debug("newDestinationFullPath : " + newDestinationFullPath);
+					log.trace("newSourceFullPath : " + newSourceFullPath);
+					log.trace("newDestinationFullPath : " + newDestinationFullPath);
 
 					File fileSource = new File(newSourceFullPath);
 					File fileDestination = new File(newDestinationFullPath);
@@ -206,7 +242,7 @@ public class Packer {
 				}
 			}
 		}
-		log.info("Origem Caminho a copiar : " + fullPathCopyFile);
+		log.trace("Origem Caminho a copiar : " + fullPathCopyFile);
 		return fullPathCopyFile;
 	}
 
@@ -214,33 +250,38 @@ public class Packer {
 		String fullPathDestino = file.getAbsolutePath();
 		if (!file.isDirectory()) {
 			if (isClass(file)) {
-				fullPathDestino = fullPathDestino.replace(getSourceFolder(), getDestinationFolder()).replace(sourceFolderClasses, compiledDestinationFolderClasses);
+				fullPathDestino = fullPathDestino.replace(getSourceFolder(), getTmpFolder()).replace(sourceFolderClasses, compiledDestinationFolderClasses);
 				if (isPackCompiledClasses()) {
 					fullPathDestino = fullPathDestino.replace(".java", ".class");
 				}
 			} else if (isWebapp(file)) {
-				fullPathDestino = fullPathDestino.replace(getSourceFolder() + matchWebappFile, getDestinationFolder() + File.separator);
+				fullPathDestino = fullPathDestino.replace(getSourceFolder() + matchWebappFile, getTmpFolder() + File.separator);
 			} else if (isResource(file)) {
-				fullPathDestino = fullPathDestino.replace(getSourceFolder() + matchResourceFile, getDestinationFolder() + compiledDestinationFolderClasses);
+				fullPathDestino = fullPathDestino.replace(getSourceFolder() + matchResourceFile, getTmpFolder() + compiledDestinationFolderClasses);
 			} else {
-				fullPathDestino = fullPathDestino.replace(getSourceFolder() + File.separator, getDestinationFolder() + File.separator);
+				fullPathDestino = fullPathDestino.replace(getSourceFolder() + File.separator, getTmpFolder() + File.separator);
 			}
 		}
-		log.info("Destino Caminho a copiar : " + fullPathDestino);
+		log.trace("Destino Caminho a copiar : " + fullPathDestino);
 		return fullPathDestino;
 	}
 
-	public void createPatch() throws SVNException {
+	public String getStructuredPath(File destination) {
+		return destination.getAbsolutePath().replace(tmpFolder + File.separator, "");
+	}
 
+	public void createPatch() throws SVNException {
+		createPatch(getPatchFiles());
 	}
 
 	public void createPatch(Map<File, File> files) throws SVNException {
-		if (StringUtils.isBlank(getDestinationFolder()) || !new File(getDestinationFolder()).isDirectory() || new File(getDestinationFolder()).list().length > 0) {
+		if (StringUtils.isBlank(getDestinationFolder()) || !new File(getDestinationFolder()).isDirectory() || (!isCreateZip() && new File(getDestinationFolder()).list().length > 0)) {
 			throw new IllegalArgumentException("Destination folder not valid");
 		}
+		deleteDirectoryContent(getTmpFolder());
 		for (File source : files.keySet()) {
 			File destination = files.get(source);
-			createFolder(destination.getParent(), getDestinationFolder());
+			createFolder(destination.getParent(), getTmpFolder());
 			try {
 				FileInputStream fileInputStreamSource = new FileInputStream(source);
 				FileOutputStream fileOutputStreamDestination = new FileOutputStream(destination);
@@ -252,10 +293,11 @@ public class Packer {
 			}
 		}
 		if (isCreateZip()) {
-			Zip zip = new Zip(getDestinationFolder());
-			zip.generateFileList(new File(getDestinationFolder()));
-			zip.zipIt(getDestinationFolder() + File.separator + (StringUtils.isNotBlank(getZipName()) ? getZipName() : "pacote.zip"));
+			Zip zip = new Zip(getTmpFolder());
+			zip.generateFileList(new File(getTmpFolder()));
+			zip.zipIt(getDestinationFolder() + File.separator + (StringUtils.isNotBlank(getZipName()) ? getZipName() : "patch.zip"));
 		}
+		deleteDirectoryContent(getTmpFolder());
 	}
 
 	private void createFolder(String path, String baseFolder) {

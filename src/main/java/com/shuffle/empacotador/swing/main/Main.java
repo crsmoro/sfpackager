@@ -1,7 +1,6 @@
 package com.shuffle.empacotador.swing.main;
 
 import java.awt.BorderLayout;
-import java.awt.Dimension;
 import java.awt.FlowLayout;
 import java.io.File;
 import java.util.ArrayList;
@@ -10,10 +9,12 @@ import java.util.List;
 import java.util.Map;
 
 import javax.swing.BoxLayout;
+import javax.swing.JFileChooser;
 import javax.swing.JOptionPane;
 import javax.swing.JPanel;
 import javax.swing.RowSorter;
 import javax.swing.SortOrder;
+import javax.swing.filechooser.FileNameExtensionFilter;
 import javax.swing.table.DefaultTableModel;
 import javax.swing.table.TableRowSorter;
 
@@ -26,10 +27,8 @@ import com.shuffle.empacotador.EmpacotadorMain;
 import com.shuffle.empacotador.core.Packer;
 import com.shuffle.empacotador.swing.core.button.event.ClickAction;
 import com.shuffle.empacotador.swing.core.frame.BaseFrame;
-import com.shuffle.empacotador.swing.main.button.ChooseDestinationButton;
 import com.shuffle.empacotador.swing.main.button.CreatePackageButton;
 import com.shuffle.empacotador.swing.main.button.ViewFilesButton;
-import com.shuffle.empacotador.swing.main.field.DestinationField;
 import com.shuffle.empacotador.swing.main.field.SourceField;
 import com.shuffle.empacotador.swing.main.group.SourcePanel;
 import com.shuffle.empacotador.swing.main.table.model.FilesModel;
@@ -38,63 +37,57 @@ import com.shuffle.empacotador.swing.main.table.model.FilesScrollTable;
 public class Main {
 	private transient static final Log log = LogFactory.getLog(EmpacotadorMain.class);
 
-	private Dimension labelDimension = new Dimension(80, 25);
+	private BaseFrame baseFrame = new BaseFrame("Empacotador");
+
+	private Packer packer = createPackerInstance();
+
+	private JPanel mainPanel = new JPanel(new BorderLayout());
+
+	private FilesModel filesModel = new FilesModel();
+
+	private JFileChooser saveAsChooser = createSaveAsChooser();
 
 	public Main() {
 		try {
-			BaseFrame frame = new BaseFrame("Empacotador");
 
-			JPanel jPanel = new JPanel(new BorderLayout());
+			JPanel centerPanel = new JPanel();
+			centerPanel.setLayout(new BoxLayout(centerPanel, BoxLayout.Y_AXIS));
+			mainPanel.add(centerPanel, BorderLayout.CENTER);
 
-			JPanel jPanelCenter = new JPanel();
-			jPanelCenter.setLayout(new BoxLayout(jPanelCenter, BoxLayout.Y_AXIS));
-			jPanel.add(jPanelCenter, BorderLayout.CENTER);
-			JPanel jPanelFields = new JPanel(new BorderLayout());
+			JPanel fieldsPanel = new JPanel(new BorderLayout());
 
-			JPanel panelOrigens = new JPanel();
-			panelOrigens.setLayout(new BoxLayout(panelOrigens, BoxLayout.Y_AXIS));
+			JPanel sourcePanels = new JPanel();
+			sourcePanels.setLayout(new BoxLayout(sourcePanels, BoxLayout.Y_AXIS));
 
 			SourcePanel sourcePanel = new SourcePanel();
 			SourceField origemField = sourcePanel.getSourceField();
-			panelOrigens.add(sourcePanel);
+			sourcePanels.add(sourcePanel);
 
-			JPanel jPanelDestino = new JPanel(new FlowLayout(FlowLayout.LEFT));
-			DestinationField destinationField = new DestinationField("Salvar em", 30);
-			destinationField.getLabel().setPreferredSize(labelDimension);
-			jPanelDestino.add(destinationField);
-			ChooseDestinationButton destinationButton = new ChooseDestinationButton(destinationField.getField());
-			jPanelDestino.add(destinationButton);
+			fieldsPanel.add(sourcePanels, BorderLayout.WEST);
 
-			jPanelFields.add(panelOrigens, BorderLayout.NORTH);
-			jPanelFields.add(jPanelDestino, BorderLayout.SOUTH);
-			jPanelCenter.add(jPanelFields);
-
-			FilesModel filesModel = new FilesModel();
+			centerPanel.add(fieldsPanel);
 
 			FilesScrollTable filesScrollTable = new FilesScrollTable(filesModel);
-			jPanelCenter.add(filesScrollTable);
+			centerPanel.add(filesScrollTable);
 
-			JPanel jPanelButtons = new JPanel(new FlowLayout(FlowLayout.RIGHT));
+			JPanel actionButtonsPanel = new JPanel(new FlowLayout(FlowLayout.RIGHT));
 
 			ViewFilesButton viewFilesButton = new ViewFilesButton();
 			viewFilesButton.addClickAction(new ClickAction() {
 
 				@Override
 				public void click() {
-					if (StringUtils.isBlank(origemField.getField().getText()) || StringUtils.isBlank(destinationField.getField().getText())) {
+					if (StringUtils.isBlank(origemField.getField().getText())) {
 						JOptionPane.showMessageDialog(null, "Preencha todos os campos", "Campos não preenchidos", JOptionPane.WARNING_MESSAGE);
 					} else {
 
 						try {
 							removeAllRows(filesModel);
-							Packer packer = new Packer();
 							packer.setSourceFolder(origemField.getField().getText());
-							packer.getExceptionFiles().add("pom.xml");
-							packer.setDestinationFolder(destinationField.getField().getText().substring(0, destinationField.getField().getText().lastIndexOf(File.separator)));
 							Map<File, File> patchFiles = packer.getPatchFiles();
 							for (File source : patchFiles.keySet()) {
 								File destination = patchFiles.get(source);
-								filesModel.addRow(new Object[] { Boolean.TRUE, destination.getAbsolutePath().replace(packer.getDestinationFolder() + File.separator, ""), source, destination });
+								filesModel.addRow(new Object[] { Boolean.TRUE, packer.getStructuredPath(destination), source, destination });
 							}
 							TableRowSorter<FilesModel> tableRowSorter = new TableRowSorter<FilesModel>(filesModel);
 							tableRowSorter.setSortable(0, false);
@@ -103,7 +96,7 @@ public class Main {
 							sortKeys.add(new RowSorter.SortKey(1, SortOrder.ASCENDING));
 							tableRowSorter.setSortKeys(sortKeys);
 							tableRowSorter.sort();
-							
+
 							JOptionPane.showMessageDialog(null, "Arquivos a serem utilizados na geração do pacote atualizados", "Concluído", JOptionPane.INFORMATION_MESSAGE);
 						} catch (SVNException ex) {
 							JOptionPane.showMessageDialog(null, ex.getErrorMessage().getMessage(), "Problema na geração", JOptionPane.ERROR_MESSAGE);
@@ -114,16 +107,14 @@ public class Main {
 					}
 				}
 			});
-			jPanelButtons.add(viewFilesButton);
+			actionButtonsPanel.add(viewFilesButton);
 
 			CreatePackageButton createPackageButton = new CreatePackageButton();
 			createPackageButton.addClickAction(new ClickAction() {
 
 				@Override
 				public void click() {
-					if (StringUtils.isBlank(origemField.getField().getText()) || StringUtils.isBlank(destinationField.getField().getText())) {
-						JOptionPane.showMessageDialog(null, "Preencha todos os campos", "Campos não preenchidos", JOptionPane.WARNING_MESSAGE);
-					} else if (filesModel.getRowCount() <= 0) {
+					if (filesModel.getRowCount() <= 0) {
 						JOptionPane.showMessageDialog(null, "Visualize os arquivos antes de gerar o pacote", "Gerar pacote", JOptionPane.WARNING_MESSAGE);
 					} else {
 						try {
@@ -142,13 +133,17 @@ public class Main {
 							if (filesForPatch.isEmpty()) {
 								JOptionPane.showMessageDialog(null, "Selecione algum arquivo para gerar o pacote", "Gerar pacote", JOptionPane.WARNING_MESSAGE);
 							} else {
-								Packer packer = new Packer();
-								packer.setSourceFolder(origemField.getField().getText());
-								packer.getExceptionFiles().add("pom.xml");
-								packer.setDestinationFolder(destinationField.getField().getText().substring(0, destinationField.getField().getText().lastIndexOf(File.separator)));
-								packer.setZipName(destinationField.getField().getText().substring(destinationField.getField().getText().lastIndexOf(File.separator) + 1, destinationField.getField().getText().length()));
-								packer.createPatch(filesForPatch);
-								JOptionPane.showMessageDialog(null, "Pacote gerado com sucesso disponível em " + destinationField.getField().getText(), "Concluído", JOptionPane.INFORMATION_MESSAGE);
+								if (saveAsChooser.showSaveDialog(null) == JFileChooser.APPROVE_OPTION) {
+									File saveAsLocation = saveAsChooser.getSelectedFile();
+									if (saveAsLocation.exists() || saveAsLocation.isDirectory() || !saveAsLocation.getAbsolutePath().endsWith(".zip")) {
+										JOptionPane.showMessageDialog(null, "Local inválido", "Salvar em...", JOptionPane.WARNING_MESSAGE);
+									} else {
+										packer.setDestinationFolder(saveAsLocation.getParent());
+										packer.setZipName(saveAsLocation.getName());
+										packer.createPatch(filesForPatch);
+										JOptionPane.showMessageDialog(null, "Pacote gerado com sucesso disponível em " + saveAsLocation.getAbsolutePath(), "Concluído", JOptionPane.INFORMATION_MESSAGE);
+									}
+								}
 							}
 						} catch (SVNException ex) {
 							JOptionPane.showMessageDialog(null, ex.getErrorMessage().getMessage(), "Problema na geração", JOptionPane.ERROR_MESSAGE);
@@ -159,18 +154,57 @@ public class Main {
 					}
 				}
 			});
-			jPanelButtons.add(createPackageButton);
-			jPanel.add(jPanelButtons, BorderLayout.SOUTH);
+			actionButtonsPanel.add(createPackageButton);
+			mainPanel.add(actionButtonsPanel, BorderLayout.SOUTH);
 
-			frame.add(jPanel);
-			frame.pack();
-			frame.setSize(600, 450);
-			frame.setVisible(true);
-			frame.setLocationRelativeTo(null);
+			baseFrame.add(mainPanel);
+			baseFrame.pack();
+			baseFrame.setSize(600, 450);
+			baseFrame.setVisible(true);
+			baseFrame.setLocationRelativeTo(null);
+			Runtime.getRuntime().addShutdownHook(new Thread(new Runnable() {
+
+				@Override
+				public void run() {
+					deleteDirectory(packer.getTmpFolder());
+				}
+			}));
 
 		} catch (Exception e) {
 			e.printStackTrace();
 		}
+	}
+	
+	private void deleteDirectory(String directory) {
+		deleteDirectory(new File(directory));
+	}
+
+	private void deleteDirectory(File directory) {
+		for (File file : directory.listFiles()) {
+			if (file.isDirectory()) {
+				deleteDirectory(file);
+			} else {
+				file.delete();
+			}
+		}
+		directory.delete();
+	}
+
+	private JFileChooser createSaveAsChooser() {
+		JFileChooser fileChooser = new JFileChooser();
+		fileChooser.setDialogTitle("Salvar em...");
+		fileChooser.setAcceptAllFileFilterUsed(false);
+		fileChooser.setFileFilter(new FileNameExtensionFilter("Arquivos ZIP", "zip"));
+		return fileChooser;
+	}
+
+	private Packer createPackerInstance() {
+		Packer packer = new Packer();
+		List<String> exceptionFiles = new ArrayList<>();
+		exceptionFiles.add("pom.xml");
+		exceptionFiles.add("target");
+		packer.setExceptionFiles(exceptionFiles);
+		return packer;
 	}
 
 	private void removeAllRows(DefaultTableModel model) {
