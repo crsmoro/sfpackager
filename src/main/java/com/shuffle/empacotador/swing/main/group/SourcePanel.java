@@ -23,7 +23,7 @@ public class SourcePanel extends JPanel {
 
 	public SourcePanel() {
 		super(new FlowLayout(FlowLayout.LEFT));
-		sourceField = new SourceField("Pasta SVN", 30);
+		sourceField = new SourceField("Pasta Git", 30);
 		sourceField.getLabel().setPreferredSize(labelDimension);
 		add(sourceField);
 		chooseSourceButton = new ChooseSourceButton(sourceField.getField());

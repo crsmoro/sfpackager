@@ -2,16 +2,21 @@ package com.shuffle.empacotador.swing.main;
 
 import java.awt.BorderLayout;
 import java.awt.FlowLayout;
+import java.awt.event.ActionEvent;
+import java.awt.event.ActionListener;
 import java.io.File;
 import java.util.ArrayList;
+import java.util.Enumeration;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
+import javax.swing.AbstractButton;
 import javax.swing.BoxLayout;
 import javax.swing.JFileChooser;
 import javax.swing.JOptionPane;
 import javax.swing.JPanel;
+import javax.swing.JRadioButtonMenuItem;
 import javax.swing.RowSorter;
 import javax.swing.SortOrder;
 import javax.swing.filechooser.FileNameExtensionFilter;
@@ -25,6 +30,7 @@ import org.tmatesoft.svn.core.SVNException;
 
 import com.shuffle.empacotador.EmpacotadorMain;
 import com.shuffle.empacotador.core.Packer;
+import com.shuffle.empacotador.exception.SFPackagerException;
 import com.shuffle.empacotador.swing.core.button.event.ClickAction;
 import com.shuffle.empacotador.swing.core.frame.BaseFrame;
 import com.shuffle.empacotador.swing.main.button.CreatePackageButton;
@@ -98,8 +104,15 @@ public class Main {
 							tableRowSorter.sort();
 
 							JOptionPane.showMessageDialog(null, "Arquivos a serem utilizados na geração do pacote atualizados", "Concluído", JOptionPane.INFORMATION_MESSAGE);
-						} catch (SVNException ex) {
-							JOptionPane.showMessageDialog(null, ex.getErrorMessage().getMessage(), "Problema na geração", JOptionPane.ERROR_MESSAGE);
+						} catch (SFPackagerException ex) {
+							String msg = "Problema geral";
+							if (ex.getCause() instanceof SVNException) {
+								msg = ((SVNException) ex.getCause()).getErrorMessage().getMessage();
+							} else {
+								log.error(msg, ex);
+								msg = ex.getCause() != null ? ex.getCause().getMessage() : ex.getMessage();
+							}
+							JOptionPane.showMessageDialog(null, msg, "Problema na geração", JOptionPane.ERROR_MESSAGE);
 						} catch (IllegalArgumentException ea) {
 							JOptionPane.showMessageDialog(null, ea.getMessage(), "Problema na geração", JOptionPane.ERROR_MESSAGE);
 						}
@@ -145,8 +158,15 @@ public class Main {
 									}
 								}
 							}
-						} catch (SVNException ex) {
-							JOptionPane.showMessageDialog(null, ex.getErrorMessage().getMessage(), "Problema na geração", JOptionPane.ERROR_MESSAGE);
+						} catch (SFPackagerException ex) {
+							String msg = "Problema geral";
+							if (ex.getCause() instanceof SVNException) {
+								msg = ((SVNException) ex.getCause()).getErrorMessage().getMessage();
+							} else {
+								log.error(msg, ex);
+								msg = ex.getCause() != null ? ex.getCause().getMessage() : ex.getMessage();
+							}
+							JOptionPane.showMessageDialog(null, msg, "Problema na geração", JOptionPane.ERROR_MESSAGE);
 						} catch (IllegalArgumentException ea) {
 							JOptionPane.showMessageDialog(null, ea.getMessage(), "Problema na geração", JOptionPane.ERROR_MESSAGE);
 						}
@@ -156,6 +176,20 @@ public class Main {
 			});
 			actionButtonsPanel.add(createPackageButton);
 			mainPanel.add(actionButtonsPanel, BorderLayout.SOUTH);
+
+			Enumeration<AbstractButton> opcoesGroupEnum = baseFrame.getOpcoesGroup().getElements();
+			while (opcoesGroupEnum.hasMoreElements()) {
+				AbstractButton abstractButton = opcoesGroupEnum.nextElement();
+				abstractButton.addActionListener(new ActionListener() {
+
+					@Override
+					public void actionPerformed(ActionEvent e) {
+						JRadioButtonMenuItem jRadioButtonMenuItem = (JRadioButtonMenuItem) e.getSource();
+						sourcePanel.getSourceField().getLabel().setText("Pasta " + jRadioButtonMenuItem.getText());
+						packer = createPackerInstance(jRadioButtonMenuItem.getText());
+					}
+				});
+			}
 
 			baseFrame.add(mainPanel);
 			baseFrame.pack();
@@ -200,7 +234,11 @@ public class Main {
 	}
 
 	private Packer createPackerInstance() {
-		Packer packer = new Packer();
+		return createPackerInstance("Git");
+	}
+
+	private Packer createPackerInstance(String type) {
+		Packer packer = Packer.newIstance(type);
 		List<String> exceptionFiles = new ArrayList<>();
 		exceptionFiles.add("pom.xml");
 		exceptionFiles.add("target");
